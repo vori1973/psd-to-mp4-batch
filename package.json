@@ -1,0 +1,23 @@
+{
+  "name": "psd-to-mp4-batch",
+  "version": "1.0.0",
+  "main": "index.js",
+  "bin": {
+    "psd-to-mp4-batch": "./run.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "pack": "mkdir -p dist && npm pack --pack-destination dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "csv-parser": "^3.2.0",
+    "fast-csv": "^5.0.2",
+    "fs-extra": "^11.3.0",
+    "minimist": "^1.2.8",
+    "sharp": "^0.34.2"
+  }
+}
