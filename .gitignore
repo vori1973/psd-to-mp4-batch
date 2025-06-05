@@ -19,7 +19,7 @@ output/*
 resources/
 
 #temp files
-
+temp/
 # Compiled Java class files
 *.class
 
