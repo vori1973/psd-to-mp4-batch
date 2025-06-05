@@ -605,6 +605,27 @@ async function main() {
 
       console.log(`📄 Processing product ${productId} -> Output: ${outputDir}`);
       await fs.copy(TEMPLATE_PATH, newTemplatePath);
+      // Check if Links folder exists next to the template and copy it
+      const templateDir = path.dirname(TEMPLATE_PATH);
+      const linksSourceDir = path.join(templateDir, 'Links');
+      const linksDestDir = path.join(TEMP_DIR, 'Links');
+
+      if (fs.existsSync(linksSourceDir) && fs.lstatSync(linksSourceDir).isDirectory()) {
+        console.log(`🔗 Found Links folder, copying to temp directory...`);
+        try {
+          // Only copy if destination doesn't exist yet (avoid copying multiple times)
+          if (!fs.existsSync(linksDestDir)) {
+            await fs.copy(linksSourceDir, linksDestDir);
+            console.log(`✅ Links folder copied successfully`);
+          } else {
+            console.log(`ℹ️ Links folder already exists in temp directory`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Warning: Failed to copy Links folder: ${error.message}`);
+        }
+      } else {
+        console.log(`ℹ️ No Links folder found next to template (this is normal if template has no linked assets)`);
+      }
       row._templatePath = newTemplatePath;
 
       // Resize images using shared bounds
