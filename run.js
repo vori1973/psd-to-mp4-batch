@@ -26,6 +26,7 @@ Options:
   --aspect <string>    Video Aspect / Resolution  (default: document)
                         check system  Media Encoder for available aspects
                         Examples: "square", "hdAnamorphic", "palWide" 
+  --export <boolean>  If true, only export MP4 files, skip PSDs (default: false)
   --timeout <number>   Script execution timeout in seconds (default: 1800)
   --ps-app <string>    Photoshop application name for macOS (default: Adobe Photoshop 2025)
   -h, --help           Show this help message
@@ -64,8 +65,7 @@ const VIDEO_PRESET = args.preset || '1_High Quality.epr'; // Default video rende
 const ALLOWED_FORMATS = ['H.264', 'QuickTime'];
 const VIDEO_FORMAT = args.format || 'H.264'; // Default video format 
 const VIDEO_ASPECT = args.aspect || 'document'; // Default video aspect/resolution
-
-
+const EXPORT_MP4_ONLY = args.export || false; // If true, only export MP4 files, skip PSDs
 const SCRIPT_TIMEOUT = args.timeout || 1800; // Default 30 minutes
 const PS_APP_NAME = args['ps-app'] || 'Adobe Photoshop 2025'; // User configurable Photoshop app name
 
@@ -86,7 +86,7 @@ function validateParameters(args) {
     'help', 'h',
     'csv', 'template', 'images',
     'out', 'width', 'height', 'size', 'preset', 'aspect', 'format',
-    'timeout', 'ps-app', 'run'
+    'timeout', 'ps-app', 'run','export'
   ];
 
   const providedParams = Object.keys(args).filter(key => key !== '_');
@@ -101,7 +101,9 @@ function validateParameters(args) {
     'ouput': 'out',
     'output': 'out', // optional fallback mapping
     'csvfile': 'csv',
-    'templat': 'template'
+    'templat': 'template',
+    'expot': 'export',
+    'expo': 'export',
   };
 
   // 🔍 Check for known common typos before invalid param check
@@ -437,7 +439,7 @@ async function validateAllPaths(rows) {
   return true;
 }
 
-function generateJSX(dataRow, templateName, videoPreset, videoFormat, videoAspect, videoSize, videoWidth, videoHeight, outputDir) {
+function generateJSX(dataRow, templateName, videoPreset, videoFormat, videoAspect, videoSize, videoWidth, videoHeight,exportMP4Only, outputDir) {
   const jsx = [];
   const productId = dataRow["product_id"];
   const templatePath = dataRow._templatePath.replace(/\\/g, "/");
@@ -526,6 +528,7 @@ function findLayerByName(container, name) {
   }
 
   // Save PSD to output directory
+  if (!exportMP4Only) {
   jsx.push(`
     try {
       var psdSaveOptions = new PhotoshopSaveOptions();
@@ -537,7 +540,7 @@ function findLayerByName(container, name) {
       alert("❌ Failed to save PSD for ${productId}: " + e);
     }
     `);
-
+  }
   // Export MP4 to output directory
   jsx.push(`
     try {
@@ -703,7 +706,7 @@ async function main() {
       }
 
       // Generate JSX for this record with its output directory
-      scriptParts.push(generateJSX(row, TEMPLATE_NAME, VIDEO_PRESET, VIDEO_FORMAT, VIDEO_ASPECT, VIDEO_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT, outputDir));
+      scriptParts.push(generateJSX(row, TEMPLATE_NAME, VIDEO_PRESET, VIDEO_FORMAT, VIDEO_ASPECT, VIDEO_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT,EXPORT_MP4_ONLY, outputDir));
     }
 
     // Step 3: Generate JSX script in temp directory
