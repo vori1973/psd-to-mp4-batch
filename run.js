@@ -48,6 +48,9 @@ Example:
   process.exit(0);
 }
 
+// Validate parameters first
+validateParameters(args);
+
 // CLI Args
 const RUN_SCRIPT = args.run || true;
 const CSV_PATH = path.resolve(args.csv || '');
@@ -77,6 +80,58 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 const SCRIPT_PATH = path.join(TEMP_DIR, 'generatedScript.jsx');
 const RESIZED_IMAGE_DIR = path.join(TEMP_DIR, 'resized');
+
+// Add this function near the top of your file, after the help section
+function validateParameters(args) {
+  // Define all valid parameter names
+  const validParams = [
+    'help', 'h',
+    'csv', 'template', 'images',
+    'out', 'width', 'height', 'size', 'preset', 'aspect', 'format',
+    'timeout', 'ps-app', 'run'
+  ];
+
+  // Get all provided parameter names (remove leading dashes)
+  const providedParams = Object.keys(args).filter(key => key !== '_');
+  
+  // Find invalid parameters
+  const invalidParams = providedParams.filter(param => !validParams.includes(param));
+  
+  if (invalidParams.length > 0) {
+    console.error(`❌ Invalid parameter(s): --${invalidParams.join(', --')}`);
+    console.error('\n📝 Valid parameters are:');
+    console.error('  Required: --csv, --template, --images');
+    console.error('  Optional: --out, --width, --height, --size, --preset, --aspect, --format');
+    console.error('  System:   --timeout, --ps-app, --run');
+    console.error('  Help:     --help, -h');
+    console.error('\n💡 Tip: Check for typos like --heigh instead of --height');
+    process.exit(1);
+  }
+
+  // Check for common typos specifically
+  const commonTypos = {
+    'heigh': 'height',
+    'widht': 'width',
+    'tempate': 'template',
+    'tmplate': 'template',
+    'image': 'images',
+    'img': 'images',
+    'ouput': 'output',
+    'preset': 'preset', // This one is correct, just showing the pattern
+  };
+
+  for (const param of providedParams) {
+    if (commonTypos[param] && commonTypos[param] !== param) {
+      console.error(`❌ Did you mean --${commonTypos[param]} instead of --${param}?`);
+      process.exit(1);
+    }
+  }
+
+  console.log('✅ All parameters are valid');
+  return true;
+}
+
+
 
 async function readCSV(csvPath) {
   const results = [];
@@ -504,7 +559,6 @@ function findLayerByName(container, name) {
       using.putBoolean(stringIDToTypeID("manage"), true);
       using.putEnumerated(stringIDToTypeID("pixelAspectRatio"), stringIDToTypeID("pixelAspectRatio"), stringIDToTypeID("${videoAspect}"));
       using.putEnumerated(stringIDToTypeID("renderAlpha"), stringIDToTypeID("alphaRendering"), stringIDToTypeID("none"));
-      using.putEnumerated(stringIDToTypeID("sizeSelector"), stringIDToTypeID("footageSize"), stringIDToTypeID("${videoSize}"));
      
     ${videoWidth && videoHeight ? `
       // Custom size export
@@ -512,7 +566,8 @@ function findLayerByName(container, name) {
       using.putInteger(stringIDToTypeID("width"), "${videoWidth}");
       using.putInteger(stringIDToTypeID("height"), "${videoHeight}");
       ` : `
-      // Using preset size
+      // Using  size
+      using.putEnumerated(stringIDToTypeID("sizeSelector"), stringIDToTypeID("footageSize"), stringIDToTypeID("${videoSize}"));
       `}
       
       using.putBoolean(stringIDToTypeID("useDocumentFrameRate"), true);
