@@ -81,9 +81,7 @@ if (!fs.existsSync(TEMP_DIR)) {
 const SCRIPT_PATH = path.join(TEMP_DIR, 'generatedScript.jsx');
 const RESIZED_IMAGE_DIR = path.join(TEMP_DIR, 'resized');
 
-// Add this function near the top of your file, after the help section
 function validateParameters(args) {
-  // Define all valid parameter names
   const validParams = [
     'help', 'h',
     'csv', 'template', 'images',
@@ -91,12 +89,31 @@ function validateParameters(args) {
     'timeout', 'ps-app', 'run'
   ];
 
-  // Get all provided parameter names (remove leading dashes)
   const providedParams = Object.keys(args).filter(key => key !== '_');
-  
-  // Find invalid parameters
+
+  const commonTypos = {
+    'heigh': 'height',
+    'widht': 'width',
+    'tempate': 'template',
+    'tmplate': 'template',
+    'image': 'images',
+    'img': 'images',
+    'ouput': 'out',
+    'output': 'out', // optional fallback mapping
+    'csvfile': 'csv',
+    'templat': 'template'
+  };
+
+  // 🔍 Check for known common typos before invalid param check
+  for (const param of providedParams) {
+    if (!validParams.includes(param) && commonTypos[param]) {
+      console.error(`❌ Did you mean --${commonTypos[param]} instead of --${param}?`);
+      process.exit(1);
+    }
+  }
+
+  // 🚫 Check for any truly invalid parameters
   const invalidParams = providedParams.filter(param => !validParams.includes(param));
-  
   if (invalidParams.length > 0) {
     console.error(`❌ Invalid parameter(s): --${invalidParams.join(', --')}`);
     console.error('\n📝 Valid parameters are:');
@@ -108,29 +125,9 @@ function validateParameters(args) {
     process.exit(1);
   }
 
-  // Check for common typos specifically
-  const commonTypos = {
-    'heigh': 'height',
-    'widht': 'width',
-    'tempate': 'template',
-    'tmplate': 'template',
-    'image': 'images',
-    'img': 'images',
-    'ouput': 'output',
-    'preset': 'preset', // This one is correct, just showing the pattern
-  };
-
-  for (const param of providedParams) {
-    if (commonTypos[param] && commonTypos[param] !== param) {
-      console.error(`❌ Did you mean --${commonTypos[param]} instead of --${param}?`);
-      process.exit(1);
-    }
-  }
-
   console.log('✅ All parameters are valid');
   return true;
 }
-
 
 
 async function readCSV(csvPath) {
