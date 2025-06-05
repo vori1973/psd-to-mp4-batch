@@ -1,0 +1,12 @@
+# Ignore development files
+*.log
+*.psd
+*.csv
+
+# Ignore folders
+resources/
+temp/
+tests/
+out/
+.idea/
+.vscode/
