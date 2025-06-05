@@ -10,83 +10,119 @@ const args = require('minimist')(process.argv.slice(2));
 if (args.help || args.h) {
   console.log(`
 Usage: psd-to-mp4-batch [options]
+  --csv <path>         Path to input CSV file
+  --template <path>    Path to PSD template
+  --images <folder>    Path to folder with image assets
 
 Options:
-  --csv <path>         Path to input CSV file (default: ./resources/Data/data.csv)
-  --template <path>    Path to PSD template (default: ./resources/template/template.psd)
-  --images <folder>    Path to folder with image assets (default: ./resources/images)
-  --out <folder>       Output directory (default: uses 'output' column from CSV)
-  --width <number>     Optional video width override
-  --height <number>    Optional video height override
-  --preset <string>    Video render preset (default: HDVHDTV1080p)
+  --out <folder>       Output directory override (default: uses 'output' column from CSV)
+  --width <number>     Video width override
+  --height <number>    Video height override
+  --size <string>      Video size (default: "document") 
+                        Examples: "HDVHDTV720p", "HDVHDTV720p"
+  --preset <string>    Video render preset (default: "1_High Quality.epr") has to match format
+                        check system Adobe Media Encoder folder for available presets
+                        Examples: "2_Medium Quality.epr", "YouTube HD 1080p 29.97.epr"  
+  --aspect <string>    Video Aspect / Resolution  (default: document)
+                        check system  Media Encoder for available aspects
+                        Examples: "square", "hdAnamorphic", "palWide" 
+  --timeout <number>   Script execution timeout in seconds (default: 1800)
+  --ps-app <string>    Photoshop application name for macOS (default: Adobe Photoshop 2025)
   -h, --help           Show this help message
+`);
+  process.exit(0);
+}
+
+// Check mandatory args
+if (!args.csv || !args.template || !args.images) {
+  console.error(`❌ Missing required arguments.
+
+Usage:
+  --csv <path>         Path to input CSV file
+  --template <path>    Path to PSD template
+  --images <folder>    Path to folder with image assets
+
+Example:
+  psd-to-mp4-batch  --csv ./data.csv --template ./template.psd --images ./images/
 `);
   process.exit(0);
 }
 
 // CLI Args
 const RUN_SCRIPT = args.run || true;
-const CSV_PATH = path.resolve(args.csv || './resources/Data/data.csv');
-const TEMPLATE_PATH = path.resolve(args.template || './resources/template/template.psd');
-const IMAGE_DIR = path.resolve(args.images || './resources/images');
+const CSV_PATH = path.resolve(args.csv || '');
+const TEMPLATE_PATH = path.resolve(args.template || '');
+const IMAGE_DIR = path.resolve(args.images || '');
 const BASE_OUT_DIR = args.out ? path.resolve(args.out) : null; // Will use CSV output column if not provided
-const ACTION_NAME = args.action || 'RenderMP4';
-const ACTION_SET = args.actionSet || 'VideoExport';
+const VIDEO_SIZE = args.size || 'document'; // Default video size
 const VIDEO_WIDTH = args.width || null;
 const VIDEO_HEIGHT = args.height || null;
-const VIDEO_PRESET = args.preset || 'HDVHDTV1080p';
+const VIDEO_PRESET = args.preset || '1_High Quality.epr'; // Default video render preset
+const ALLOWED_FORMATS = ['H.264', 'QuickTime'];
+const VIDEO_FORMAT = args.format || 'H.264'; // Default video format 
+const VIDEO_ASPECT = args.aspect || 'document'; // Default video aspect/resolution
+
+
+const SCRIPT_TIMEOUT = args.timeout || 1800; // Default 30 minutes
+const PS_APP_NAME = args['ps-app'] || 'Adobe Photoshop 2025'; // User configurable Photoshop app name
 
 // Create temp directory in script location
-const SCRIPT_DIR = path.dirname(path.resolve(process.argv[1]));
-const TEMP_DIR = path.join(SCRIPT_DIR, 'temp');
+// const SCRIPT_DIR = path.dirname(path.resolve(process.argv[1]));
+// const TEMP_DIR = path.join(SCRIPT_DIR, 'temp');
+const CWD = process.cwd(); // 👈 This is where the user runs the CLI from
+const TEMP_DIR = path.join(CWD, 'temp');
+// Create it if it doesn't exist
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
 const SCRIPT_PATH = path.join(TEMP_DIR, 'generatedScript.jsx');
 const RESIZED_IMAGE_DIR = path.join(TEMP_DIR, 'resized');
 
 async function readCSV(csvPath) {
-    const results = [];
-    return new Promise((resolve, reject) => {
-        fs.createReadStream(csvPath)
-            .pipe(csv())
-            .on('data', data => results.push(data))
-            .on('end', () => resolve(results))
-            .on('error', reject);
-    });
+  const results = [];
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(csvPath)
+      .pipe(csv())
+      .on('data', data => results.push(data))
+      .on('end', () => resolve(results))
+      .on('error', reject);
+  });
 }
 
 function parseBoundsFile(boundsFilePath) {
-    const lines = fs.readFileSync(boundsFilePath, 'utf-8')
-        .split(/\r?\n|\r/g)
-        .map(l => l.trim())
-        .filter(Boolean);
+  const lines = fs.readFileSync(boundsFilePath, 'utf-8')
+    .split(/\r?\n|\r/g)
+    .map(l => l.trim())
+    .filter(Boolean);
 
-    const result = {};
-    for (const line of lines) {
-        const [key, value] = line.split('=');
-        if (!key || !value) continue;
+  const result = {};
+  for (const line of lines) {
+    const [key, value] = line.split('=');
+    if (!key || !value) continue;
 
-        const [w, h] = value.split(',').map(n => parseInt(n, 10));
-        if (Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0) {
-            result[key] = { width: w, height: h };
-        } else {
-            console.warn(`⚠️ Skipping invalid bounds for ${key}: "${value}"`);
-        }
+    const [w, h] = value.split(',').map(n => parseInt(n, 10));
+    if (Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0) {
+      result[key] = { width: w, height: h };
+    } else {
+      console.warn(`⚠️ Skipping invalid bounds for ${key}: "${value}"`);
     }
+  }
 
-    return result;
+  return result;
 }
 
 async function resizeImageToFit(imagePath, outputPath, dim) {
-    return sharp(imagePath)
-        .resize(dim.width, dim.height, {
-            fit: 'contain',
-            background: { r: 0, g: 0, b: 0, alpha: 0 }
-        })
-        .toFile(outputPath);
+  return sharp(imagePath)
+    .resize(dim.width, dim.height, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
+    .toFile(outputPath);
 }
 
 // Combined function to extract bounds AND validate required layers
 async function extractBoundsAndValidate(templatePath, boundsOutPath, requiredLayers) {
-    const jsx = `#target photoshop
+  const jsx = `#target photoshop
 var doc = app.open(new File("${templatePath.replace(/\\/g, '/')}"));
 var boundsMsg = "";
 var validationMsg = "";
@@ -171,117 +207,193 @@ if (validationFile.open("w")) {
 doc.close(SaveOptions.SAVECHANGES);
 `;
 
-    const jsxPath = path.join(TEMP_DIR, 'extractBoundsAndValidate_temp.jsx');
-    await fs.writeFile(jsxPath, jsx);
+  const jsxPath = path.join(TEMP_DIR, 'extractBoundsAndValidate_temp.jsx');
+  await fs.writeFile(jsxPath, jsx);
 
-    await executePhotoshopScript(jsxPath);
-    await fs.remove(jsxPath);
+  await executePhotoshopScript(jsxPath);
+  await fs.remove(jsxPath);
 }
 
 // Reusable function to execute Photoshop scripts
 async function executePhotoshopScript(jsxPath, timeoutSeconds = 300) {
-    const jsxAbsPath = path.resolve(jsxPath);
+  const jsxAbsPath = path.resolve(jsxPath);
 
-    return new Promise((resolve, reject) => {
-        if (os.platform() === 'darwin') {
-            const appName = 'Adobe Photoshop 2025';
-            const osaCmd = [
-                `osascript`,
-                `-e 'with timeout of ${timeoutSeconds} seconds'`,
-                `-e 'tell application "${appName}"'`,
-                `-e 'do javascript file "${jsxAbsPath}"'`,
-                `-e 'end tell'`,
-                `-e 'end timeout'`
-            ].join(' ');
+  return new Promise((resolve, reject) => {
+    if (os.platform() === 'darwin') {
+      const osaCmd = [
+        `osascript`,
+        `-e 'with timeout of ${timeoutSeconds} seconds'`,
+        `-e 'tell application "${PS_APP_NAME}"'`,
+        `-e 'do javascript file "${jsxAbsPath}"'`,
+        `-e 'end tell'`,
+        `-e 'end timeout'`
+      ].join(' ');
 
-            exec(osaCmd, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`❌ Error executing Photoshop script: ${error.message}`));
-                } else {
-                    console.log(`✅ Photoshop script executed successfully`);
-                    resolve(stdout);
-                }
-            });
-        } else if (os.platform() === 'win32') {
-            const vbscript = `
+      exec(osaCmd, (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`❌ Error executing Photoshop script: ${error.message}`));
+        } else {
+          console.log(`✅ Photoshop script executed successfully`);
+          resolve(stdout);
+        }
+      });
+    } else if (os.platform() === 'win32') {
+      const vbscript = `
         Set app = CreateObject("Photoshop.Application")
         app.DoJavaScriptFile("${jsxAbsPath.replace(/\\/g, "\\\\")}")
       `;
-            const vbsPath = path.join(TEMP_DIR, 'run_temp.vbs');
-            fs.writeFileSync(vbsPath, vbscript);
+      const vbsPath = path.join(TEMP_DIR, 'run_temp.vbs');
+      fs.writeFileSync(vbsPath, vbscript);
 
-            exec(`cscript //nologo ${vbsPath}`, (error, stdout, stderr) => {
-                fs.removeSync(vbsPath);
-                if (error) {
-                    reject(new Error(`❌ Error executing Photoshop script: ${error.message}`));
-                } else {
-                    console.log(`✅ Photoshop script executed successfully`);
-                    resolve(stdout);
-                }
-            });
+      exec(`cscript //nologo ${vbsPath}`, (error, stdout, stderr) => {
+        fs.removeSync(vbsPath);
+        if (error) {
+          reject(new Error(`❌ Error executing Photoshop script: ${error.message}`));
         } else {
-            reject(new Error("❌ Script execution is only supported on macOS and Windows."));
+          console.log(`✅ Photoshop script executed successfully`);
+          resolve(stdout);
         }
-    });
+      });
+    } else {
+      reject(new Error("❌ Script execution is only supported on macOS and Windows."));
+    }
+  });
 }
 
 // Function to validate layer presence from validation file
 function validateLayersFromFile(validationFilePath) {
-    try {
-        const content = fs.readFileSync(validationFilePath, 'utf-8');
-        const lines = content.split(/\r?\n|\r/g);
-        const validationLine = lines.find(line => line.startsWith('MISSING_LAYERS:') || line.startsWith('ALL_LAYERS_FOUND'));
+  try {
+    const content = fs.readFileSync(validationFilePath, 'utf-8');
+    const lines = content.split(/\r?\n|\r/g);
+    const validationLine = lines.find(line => line.startsWith('MISSING_LAYERS:') || line.startsWith('ALL_LAYERS_FOUND'));
 
-        if (!validationLine) {
-            throw new Error('❌ Could not find validation results in file');
-        }
-
-        if (validationLine.startsWith('MISSING_LAYERS:')) {
-            const missingLayers = validationLine.replace('MISSING_LAYERS:', '').split(',');
-            throw new Error(`❌ Missing required layers in template: ${missingLayers.join(', ')}`);
-        }
-
-        console.log('✅ All required layers found in template');
-        return true;
+    if (!validationLine) {
+      throw new Error('❌ Could not find validation results in file');
     }
-    catch (err) {
-        console.error(`❌ Error reading validation file: ${err.message}`);
-        return false;
+
+    if (validationLine.startsWith('MISSING_LAYERS:')) {
+      const missingLayers = validationLine.replace('MISSING_LAYERS:', '').split(',');
+      throw new Error(`❌ Missing required layers in template: ${missingLayers.join(', ')}`);
     }
+
+    console.log('✅ All required layers found in template');
+    return true;
+  }
+  catch (err) {
+    console.error(`❌ Error reading validation file: ${err.message}`);
+    return false;
+  }
 }
 
 // Function to get all required layers from CSV data
 function getRequiredLayersFromData(rows) {
-    const requiredLayers = new Set();
+  const requiredLayers = new Set();
 
-    for (const row of rows) {
-        for (const [key, value] of Object.entries(row)) {
-            if (key === "id" || key === "product_id" || key === "_templatePath" || key === "output") continue;
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row)) {
+      if (key === "id" || key === "product_id" || key === "_templatePath" || key === "output") continue;
 
-            if (key.toLowerCase().includes('image')) {
-                requiredLayers.add(key);
-            } else if (key.startsWith("txt_")) {
-                const smartLayer = key.slice(4);
-                requiredLayers.add(smartLayer);
-            } else {
-                // Regular text layers
-                requiredLayers.add(key);
-            }
-        }
+      if (key.toLowerCase().includes('image')) {
+        requiredLayers.add(key);
+      } else if (key.startsWith("txt_")) {
+        const smartLayer = key.slice(4);
+        requiredLayers.add(smartLayer);
+      } else {
+        // Regular text layers
+        requiredLayers.add(key);
+      }
     }
+  }
 
-    return Array.from(requiredLayers);
+  return Array.from(requiredLayers);
 }
 
-function generateJSX(dataRow,templateName, actionName, actionSet, videoPreset, videoWidth, videoHeight, outputDir) {
-    const jsx = [];
-    const productId = dataRow["product_id"];
-    const templatePath = dataRow._templatePath.replace(/\\/g, "/");
+// NEW: Function to validate all paths before processing
+async function validateAllPaths(rows) {
+  console.log('🔍 Validating all file paths before processing...');
 
-    jsx.push(`var doc = app.open(new File("${templatePath}"));`);
+  const errors = [];
 
-    // Helper: recursive layer search
-    jsx.push(`
+  // Check CSV file
+  if (!fs.existsSync(CSV_PATH)) {
+    errors.push(`CSV file not found: ${CSV_PATH}`);
+  }
+
+  // Check template file
+  if (!fs.existsSync(TEMPLATE_PATH)) {
+    errors.push(`Template PSD not found: ${TEMPLATE_PATH}`);
+  }
+
+  // Check images directory
+  if (!fs.existsSync(IMAGE_DIR)) {
+    errors.push(`Images directory not found: ${IMAGE_DIR}`);
+  }
+
+  // Check all image files referenced in CSV
+  const missingImages = [];
+  const invalidOutputPaths = [];
+
+  for (const row of rows) {
+    const productId = row["product_id"];
+
+    // Check output directory path
+    let outputDir;
+    try {
+      if (BASE_OUT_DIR) {
+        outputDir = BASE_OUT_DIR;
+      } else if (row.output) {
+        outputDir = path.resolve(IMAGE_DIR + "/" + row.output);
+      } else {
+        invalidOutputPaths.push(`Product ${productId}: No output directory specified`);
+        continue;
+      }
+
+      // Try to ensure output directory exists to validate path
+      await fs.ensureDir(outputDir);
+    } catch (err) {
+      invalidOutputPaths.push(`Product ${productId}: Invalid output path - ${err.message}`);
+    }
+
+    // Check all image files for this row
+    for (const [key, value] of Object.entries(row)) {
+      if (key.toLowerCase().includes('image') && value) {
+        const imagePath = path.resolve(IMAGE_DIR, value);
+        if (!fs.existsSync(imagePath)) {
+          missingImages.push(`${key}: ${imagePath}`);
+        }
+      }
+    }
+  }
+
+  // Collect all errors
+  if (missingImages.length > 0) {
+    errors.push(`Missing image files:\n  ${missingImages.join('\n  ')}`);
+  }
+
+  if (invalidOutputPaths.length > 0) {
+    errors.push(`Invalid output paths:\n  ${invalidOutputPaths.join('\n  ')}`);
+  }
+
+  // Report results
+  if (errors.length > 0) {
+    console.error('❌ Path validation failed:');
+    errors.forEach(error => console.error(`   ${error}`));
+    return false;
+  }
+
+  console.log('✅ All paths validated successfully');
+  return true;
+}
+
+function generateJSX(dataRow, templateName, videoPreset, videoFormat, videoAspect, videoSize, videoWidth, videoHeight, outputDir) {
+  const jsx = [];
+  const productId = dataRow["product_id"];
+  const templatePath = dataRow._templatePath.replace(/\\/g, "/");
+
+  jsx.push(`var doc = app.open(new File("${templatePath}"));`);
+
+  // Helper: recursive layer search
+  jsx.push(`
 function findLayerByName(container, name) {
   for (var i = 0; i < container.layers.length; i++) {
     var layer = container.layers[i];
@@ -295,15 +407,15 @@ function findLayerByName(container, name) {
 }
 `);
 
-    for (const [key, value] of Object.entries(dataRow)) {
-        if (key === "id" || key === "product_id" || key === "_templatePath" || key === "output") continue;
+  for (const [key, value] of Object.entries(dataRow)) {
+    if (key === "id" || key === "product_id" || key === "_templatePath" || key === "output") continue;
 
-        if (key.toLowerCase().includes('image')) {
-            const imagePath = value.includes('resized/')
-                ? path.resolve(IMAGE_DIR, value).replace(/\\/g, "/")
-                : path.resolve(IMAGE_DIR, value).replace(/\\/g, "/");
+    if (key.toLowerCase().includes('image')) {
+      const imagePath = value.includes('resized/')
+        ? path.resolve(IMAGE_DIR, value).replace(/\\/g, "/")
+        : path.resolve(IMAGE_DIR, value).replace(/\\/g, "/");
 
-            jsx.push(`
+      jsx.push(`
         try {
           var imageLayer = findLayerByName(doc, "${key}");
           if (!imageLayer) throw "Layer not found";
@@ -317,9 +429,9 @@ function findLayerByName(container, name) {
           alert("❌ Failed to replace image for ${key}: " + e);
         }
       `);
-        } else if (key.startsWith("txt_")) {
-            const smartLayer = key.slice(4);
-            jsx.push(`
+    } else if (key.startsWith("txt_")) {
+      const smartLayer = key.slice(4);
+      jsx.push(`
         try {
           var smartLayer = findLayerByName(doc, "${smartLayer}");
           if (!smartLayer) throw "Smart Object layer not found";
@@ -347,8 +459,8 @@ function findLayerByName(container, name) {
           alert("🚨 Error editing Smart Object '${smartLayer}': " + e);
         }
       `);
-        } else {
-            jsx.push(`
+    } else {
+      jsx.push(`
         try {
           var textLayer = findLayerByName(doc, "${key}");
           if (textLayer && textLayer.kind === LayerKind.TEXT) {
@@ -358,11 +470,11 @@ function findLayerByName(container, name) {
           alert("Text replacement error (${key}): " + e);
         }
       `);
-        }
     }
+  }
 
-    // Save PSD to output directory
-    jsx.push(`
+  // Save PSD to output directory
+  jsx.push(`
     try {
       var psdSaveOptions = new PhotoshopSaveOptions();
       psdSaveOptions.embedColorProfile = true;
@@ -374,24 +486,25 @@ function findLayerByName(container, name) {
     }
     `);
 
-    // Export MP4 to output directory
-    jsx.push(`
+  // Export MP4 to output directory
+  jsx.push(`
     try {
       var desc = new ActionDescriptor();
       var using = new ActionDescriptor();
 
       using.putBoolean(stringIDToTypeID("allFrames"), true);
-      using.putString(stringIDToTypeID("ameFormatName"), "H.264");
-      using.putString(stringIDToTypeID("amePresetName"), "1_High Quality.epr");
+      using.putString(stringIDToTypeID("ameFormatName"), "${videoFormat}");
+      using.putString(stringIDToTypeID("amePresetName"), "${videoPreset}");
+
 
       var exportFolder = new File("${outputDir.replace(/\\/g, "/")}");
       using.putPath(stringIDToTypeID("directory"), exportFolder);
 
       using.putEnumerated(stringIDToTypeID("fieldOrder"), stringIDToTypeID("videoField"), stringIDToTypeID("preset"));
       using.putBoolean(stringIDToTypeID("manage"), true);
-      using.putEnumerated(stringIDToTypeID("pixelAspectRatio"), stringIDToTypeID("pixelAspectRatio"), stringIDToTypeID("document"));
+      using.putEnumerated(stringIDToTypeID("pixelAspectRatio"), stringIDToTypeID("pixelAspectRatio"), stringIDToTypeID("${videoAspect}"));
       using.putEnumerated(stringIDToTypeID("renderAlpha"), stringIDToTypeID("alphaRendering"), stringIDToTypeID("none"));
-      using.putEnumerated(stringIDToTypeID("sizeSelector"), stringIDToTypeID("footageSize"), stringIDToTypeID("${videoPreset}"));
+      using.putEnumerated(stringIDToTypeID("sizeSelector"), stringIDToTypeID("footageSize"), stringIDToTypeID("${videoSize}"));
      
     ${videoWidth && videoHeight ? `
       // Custom size export
@@ -412,14 +525,25 @@ function findLayerByName(container, name) {
     doc.close(SaveOptions.SAVECHANGES);
   `);
 
-    return jsx.join("\n");
+  return jsx.join("\n");
 }
 
 async function main() {
   try {
+    console.log(`⚙️ Configuration:`);
+    console.log(`   CSV Path: ${CSV_PATH}`);
+    console.log(`   Template Path: ${TEMPLATE_PATH}`);
+    console.log(`   Images Directory: ${IMAGE_DIR}`);
+    console.log(`   Script Timeout: ${SCRIPT_TIMEOUT} seconds`);
+    console.log(`   Photoshop App: ${PS_APP_NAME}`);
+    console.log(`   Output Directory: ${BASE_OUT_DIR || 'From CSV output column'}`);
+    // Check mandatory args
+
     if (!fs.existsSync(CSV_PATH)) throw new Error("❌ CSV file not found: " + CSV_PATH);
     if (!fs.existsSync(TEMPLATE_PATH)) throw new Error("❌ Template PSD not found: " + TEMPLATE_PATH);
-    
+    if (!(fs.existsSync(IMAGE_DIR) && fs.lstatSync(IMAGE_DIR).isDirectory())) throw new Error("❌ Images directory not found: " + IMAGE_DIR);
+    if (!ALLOWED_FORMATS.includes(VIDEO_FORMAT)) throw new Error(`❌ Invalid --format "${VIDEO_FORMAT}". Supported values: ${ALLOWED_FORMATS.join(', ')}`);
+
     // Ensure temp directory exists
     await fs.ensureDir(TEMP_DIR);
     await fs.ensureDir(RESIZED_IMAGE_DIR);
@@ -429,6 +553,13 @@ async function main() {
 
     console.log(`📁 Temp directory: ${TEMP_DIR}`);
     console.log(`📂 Resized images will be stored in: ${RESIZED_IMAGE_DIR}`);
+
+    // NEW: Validate all paths before proceeding
+    const pathsValid = await validateAllPaths(rows);
+    if (!pathsValid) {
+      console.error('❌ Aborting due to path validation errors. Please fix the issues above and try again.');
+      process.exit(1);
+    }
 
     // Step 1: Extract bounds ONCE and validate ALL required layers
     console.log("🔍 Analyzing template and validating required layers...");
@@ -443,7 +574,7 @@ async function main() {
     // Validate that all required layers were found
     const isValid = validateLayersFromFile(validationOutPath);
     if (!isValid) process.exit(1);
-    
+
     // Parse bounds once
     const bounds = parseBoundsFile(boundsOutPath);
     console.log(`📐 Found bounds for layers: ${Object.keys(bounds).join(', ')}`);
@@ -452,54 +583,54 @@ async function main() {
     const scriptParts = [];
 
     for (const row of rows) {
-        const productId = row["product_id"];
-        
-        // Determine output directory for this record
-        let outputDir;
-        if (BASE_OUT_DIR) {
-            // Use provided output directory
-            outputDir = BASE_OUT_DIR;
-        } else if (row.output) {
-            // Use output column from CSV
-            outputDir = path.resolve(IMAGE_DIR+"/"+row.output);
-        } else {
-            throw new Error(`❌ No output directory specified for product ${productId}. Either provide --out parameter or include 'output' column in CSV.`);
-        }
+      const productId = row["product_id"];
 
-        // Ensure output directory exists
-        await fs.ensureDir(outputDir);
-        
-        const newTemplateName = `${TEMPLATE_NAME}_${productId}.psd`;
-        const newTemplatePath = path.join(TEMP_DIR, newTemplateName);
+      // Determine output directory for this record
+      let outputDir;
+      if (BASE_OUT_DIR) {
+        // Use provided output directory
+        outputDir = BASE_OUT_DIR;
+      } else if (row.output) {
+        // Use output column from CSV
+        outputDir = path.resolve(IMAGE_DIR + "/" + row.output);
+      } else {
+        throw new Error(`❌ No output directory specified for product ${productId}. Either provide --out parameter or include 'output' column in CSV.`);
+      }
 
-        console.log(`📄 Processing product ${productId} -> Output: ${outputDir}`);
-        await fs.copy(TEMPLATE_PATH, newTemplatePath);
-        row._templatePath = newTemplatePath;
+      // Ensure output directory exists
+      await fs.ensureDir(outputDir);
 
-        // Resize images using shared bounds
-        for (const [key, value] of Object.entries(row)) {
-            if (key.toLowerCase().includes("image")) {
-                const originalImage = path.resolve(IMAGE_DIR, value);
-                const resizedImage = path.join(RESIZED_IMAGE_DIR, `${productId}_${key}.png`);
-                const dim = bounds[key];
+      const newTemplateName = `${TEMPLATE_NAME}_${productId}.psd`;
+      const newTemplatePath = path.join(TEMP_DIR, newTemplateName);
 
-                if (dim && fs.existsSync(originalImage)) {
-                    console.log(`📐 Resizing ${key} to ${dim.width}x${dim.height}`);
-                    await resizeImageToFit(originalImage, resizedImage, dim);
-                    row[key] = path.relative(IMAGE_DIR, resizedImage).replace(/\\/g, '/');
-                } else {
-                    if (!dim) {
-                        console.warn(`⚠️ No bounds found for ${key}. Available bounds: ${Object.keys(bounds).join(', ')}`);
-                    }
-                    if (!fs.existsSync(originalImage)) {
-                        console.warn(`⚠️ Original image not found: ${originalImage}`);
-                    }
-                }
+      console.log(`📄 Processing product ${productId} -> Output: ${outputDir}`);
+      await fs.copy(TEMPLATE_PATH, newTemplatePath);
+      row._templatePath = newTemplatePath;
+
+      // Resize images using shared bounds
+      for (const [key, value] of Object.entries(row)) {
+        if (key.toLowerCase().includes("image")) {
+          const originalImage = path.resolve(IMAGE_DIR, value);
+          const resizedImage = path.join(RESIZED_IMAGE_DIR, `${productId}_${key}.png`);
+          const dim = bounds[key];
+
+          if (dim && fs.existsSync(originalImage)) {
+            console.log(`📐 Resizing ${key} to ${dim.width}x${dim.height}`);
+            await resizeImageToFit(originalImage, resizedImage, dim);
+            row[key] = path.relative(IMAGE_DIR, resizedImage).replace(/\\/g, '/');
+          } else {
+            if (!dim) {
+              console.warn(`⚠️ No bounds found for ${key}. Available bounds: ${Object.keys(bounds).join(', ')}`);
             }
+            if (!fs.existsSync(originalImage)) {
+              console.warn(`⚠️ Original image not found: ${originalImage}`);
+            }
+          }
         }
+      }
 
-        // Generate JSX for this record with its output directory
-        scriptParts.push(generateJSX(row,TEMPLATE_NAME, ACTION_NAME, ACTION_SET, VIDEO_PRESET, VIDEO_WIDTH, VIDEO_HEIGHT, outputDir));
+      // Generate JSX for this record with its output directory
+      scriptParts.push(generateJSX(row, TEMPLATE_NAME, VIDEO_PRESET, VIDEO_FORMAT, VIDEO_ASPECT, VIDEO_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT, outputDir));
     }
 
     // Step 3: Generate JSX script in temp directory
@@ -509,24 +640,18 @@ async function main() {
 
     console.log(`✅ Script written to: ${SCRIPT_PATH}`);
     console.log(`📂 Temporary files location: ${TEMP_DIR}`);
-    console.log(`🎯 Improvements applied:`);
-    console.log(`  - Per-record output directories from CSV or parameter`);
-    console.log(`  - All temporary files organized in temp folder`);
-    console.log(`  - Both PSD and MP4 outputs generated for each record`);
-    console.log(`  - Bounds extracted once for all products`);
-    console.log(`  - All required layers validated before processing`);
 
     // Step 4: Optionally run the script
     if (RUN_SCRIPT) {
-        console.log(`🚀 Launching Photoshop and running script...`);
-        try {
-            await executePhotoshopScript(SCRIPT_PATH, 600); // 10 minute timeout for batch processing
-            console.log(`✅ All products processed successfully!`);
-        } catch (error) {
-            console.error(`❌ Error running script: ${error.message}`);
-        }
+      console.log(`🚀 Launching Photoshop and running script with ${SCRIPT_TIMEOUT}s timeout...`);
+      try {
+        await executePhotoshopScript(SCRIPT_PATH, SCRIPT_TIMEOUT);
+        console.log(`✅ All products processed successfully!`);
+      } catch (error) {
+        console.error(`❌ Error running script: ${error.message}`);
+      }
     } else {
-        console.log(`📌 To run the script, use --run flag or open Photoshop > File > Scripts > Browse... and select ${SCRIPT_PATH}`);
+      console.log(`📌 To run the script, use --run flag or open Photoshop > File > Scripts > Browse... and select ${SCRIPT_PATH}`);
     }
 
     // Cleanup info
@@ -534,7 +659,7 @@ async function main() {
     console.log(`📄 Validation file saved to: ${validationOutPath}`);
     console.log(`📁 Resized images saved to: ${RESIZED_IMAGE_DIR}`);
     console.log(`🗂️ To clean up temporary files, delete: ${TEMP_DIR}`);
-    
+
   } catch (error) {
     console.error(`❌ Error: ${error.message}`);
     process.exit(1);
