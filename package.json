@@ -1,6 +1,6 @@
 {
   "name": "psd-to-mp4-batch",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "main": "index.js",
   "bin": {
     "psd-to-mp4-batch": "./run.js"
