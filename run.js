@@ -19,10 +19,12 @@ Options:
   --width <number>     Video width override
   --height <number>    Video height override
   --size <string>      Video size (default: "document") 
-                        Examples: "HDVHDTV720p", "HDVHDTV720p"
+                        Examples: "HDVHDTV1080p", "HDVHDTV720p"
   --preset <string>    Video render preset (default: "1_High Quality.epr") has to match format
                         check system Adobe Media Encoder folder for available presets
                         Examples: "2_Medium Quality.epr", "YouTube HD 1080p 29.97.epr"  
+  --use-preset-frame-rate <boolean>  Use preset frame rate (default: true)
+  --use-preset-size <boolean>  Use preset size (default: true)
   --aspect <string>    Video Aspect / Resolution  (default: document)
                         check system  Media Encoder for available aspects
                         Examples: "square", "hdAnamorphic", "palWide" 
@@ -62,6 +64,8 @@ const VIDEO_SIZE = args.size || 'document'; // Default video size
 const VIDEO_WIDTH = args.width || null;
 const VIDEO_HEIGHT = args.height || null;
 const VIDEO_PRESET = args.preset || '1_High Quality.epr'; // Default video render preset
+const USE_PRESET_FRAME_RATE  =  args['use-preset-frame-rate'] || true; // Use preset frame rate if true
+const USE_PRESET_SIZE = args['use-preset-size'] || true; // Use preset size if true
 const ALLOWED_FORMATS = ['H.264', 'QuickTime'];
 const VIDEO_FORMAT = args.format || 'H.264'; // Default video format 
 const VIDEO_ASPECT = args.aspect || 'document'; // Default video aspect/resolution
@@ -86,7 +90,7 @@ function validateParameters(args) {
     'help', 'h',
     'csv', 'template', 'images',
     'out', 'width', 'height', 'size', 'preset', 'aspect', 'format',
-    'timeout', 'ps-app', 'run','export'
+    'timeout', 'ps-app', 'run','export', 'use-preset-frame-rate', 'use-preset-size'
   ];
 
   const providedParams = Object.keys(args).filter(key => key !== '_');
@@ -439,7 +443,7 @@ async function validateAllPaths(rows) {
   return true;
 }
 
-function generateJSX(dataRow, templateName, videoPreset, videoFormat, videoAspect, videoSize, videoWidth, videoHeight,exportMP4Only, outputDir) {
+function generateJSX(dataRow, templateName, videoPreset,videoPresetFrameRate,videoPresetSize, videoFormat, videoAspect, videoSize, videoWidth, videoHeight,exportMP4Only, outputDir) {
   const jsx = [];
   const productId = dataRow["product_id"];
   const templatePath = dataRow._templatePath.replace(/\\/g, "/");
@@ -546,12 +550,16 @@ function findLayerByName(container, name) {
     try {
       var desc = new ActionDescriptor();
       var using = new ActionDescriptor();
-
+      using.putBoolean(stringIDToTypeID("useDocumentFrameRate"), ${!videoPresetFrameRate});
+      
       using.putBoolean(stringIDToTypeID("allFrames"), true);
       using.putString(stringIDToTypeID("ameFormatName"), "${videoFormat}");
+
       using.putString(stringIDToTypeID("amePresetName"), "${videoPreset}");
 
-
+      using.putBoolean(stringIDToTypeID("usePresetFrameRate"), ${videoPresetFrameRate});
+      using.putBoolean(stringIDToTypeID("usePresetSize"), ${videoPresetSize});
+      
       var exportFolder = new File("${outputDir.replace(/\\/g, "/")}");
       using.putPath(stringIDToTypeID("directory"), exportFolder);
 
@@ -561,6 +569,7 @@ function findLayerByName(container, name) {
       using.putEnumerated(stringIDToTypeID("renderAlpha"), stringIDToTypeID("alphaRendering"), stringIDToTypeID("none"));
      
     ${videoWidth && videoHeight ? `
+      using.putBoolean(stringIDToTypeID("usePresetSize"), false);
       // Custom size export
       using.putEnumerated(stringIDToTypeID("sizeSelector"), stringIDToTypeID("footageSize"), stringIDToTypeID("customSize"));
       using.putInteger(stringIDToTypeID("width"), "${videoWidth}");
@@ -569,8 +578,6 @@ function findLayerByName(container, name) {
       // Using  size
       using.putEnumerated(stringIDToTypeID("sizeSelector"), stringIDToTypeID("footageSize"), stringIDToTypeID("${videoSize}"));
       `}
-      
-      using.putBoolean(stringIDToTypeID("useDocumentFrameRate"), true);
 
       desc.putObject(stringIDToTypeID("using"), stringIDToTypeID("videoExport"), using);
       executeAction(stringIDToTypeID("export"), desc, DialogModes.NO);
@@ -706,7 +713,7 @@ async function main() {
       }
 
       // Generate JSX for this record with its output directory
-      scriptParts.push(generateJSX(row, TEMPLATE_NAME, VIDEO_PRESET, VIDEO_FORMAT, VIDEO_ASPECT, VIDEO_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT,EXPORT_MP4_ONLY, outputDir));
+      scriptParts.push(generateJSX(row, TEMPLATE_NAME, VIDEO_PRESET, USE_PRESET_FRAME_RATE,USE_PRESET_SIZE, VIDEO_FORMAT, VIDEO_ASPECT, VIDEO_SIZE, VIDEO_WIDTH, VIDEO_HEIGHT,EXPORT_MP4_ONLY, outputDir));
     }
 
     // Step 3: Generate JSX script in temp directory
