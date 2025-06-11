@@ -16,6 +16,13 @@ A powerful Node.js CLI tool that automates the batch replacement of Smart Object
 
 ---
 
+### 📊 Sample CSV Format
+
+| id | product_id | output           | Image 1                | Image 2                | txt_Title    | txt_Description     | Price   |
+|----|------------|------------------|-------------------------|-------------------------|--------------|---------------------|---------|
+| 1  | prod001    | prod001_output   | images/prod001_img1.jpg | images/prod001_img2.jpg | Winter Sale  | 50% Off!            | $29.99  |
+| 2  | prod002    | prod002_output   | images/prod002_img1.jpg | images/prod002_img2.jpg | Summer Deal  | Buy 1 Get 1 Free     | $19.99  |
+
 ## 🚀 Installation
 
 ```bash
