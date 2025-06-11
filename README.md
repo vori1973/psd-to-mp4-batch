@@ -26,7 +26,14 @@ A powerful Node.js CLI tool that automates the batch replacement of Smart Object
 ## 🚀 Installation
 
 ```bash
-npm install -g psd-to-mp4-batch
+npm run pack
+npm install -g ./dist/psd-to-mp4-batch-1.0.0.tgz
+```
+🔁 Replace psd-to-mp4-batch-1.0.0.tgz with the actual filename in your dist/ folder.
+
+Run:
+```bash
+psd-to-mp4-batch --csv ./data.csv --template ./template.psd --images ./images
 ```
 
 Or run directly using:
