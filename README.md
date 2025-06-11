@@ -1,6 +1,6 @@
 # 📽️ PSD to MP4 Batch Renderer
 
-A powerful Node.js CLI tool that automates the batch replacement of Smart Object images and text in Photoshop PSD templates, exports them as new PSD files, and optionally renders MP4 videos using Adobe Media Encoder presets.
+A powerful Node.js CLI tool that automates the batch replacement of Smart Object images and text in Photoshop PSD templates, leverages the Photoshop Timeline feature to enable animated content, exports updated PSDs, and renders MP4 videos using Adobe Media Encoder presets.
 
 ---
 
